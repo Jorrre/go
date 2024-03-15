@@ -390,6 +390,13 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	}
 	// Advance KDK
 	sake.AdvanceNextOdd(&session.secret, &session.sakeCounter, cipherSuite.extract)
+	// Genereate SAKE challenge for auth purposes
+	identityString := []byte(c.LocalAddr().String())
+	sakeVerify, err := sake.CreateSakeVerify(cipherSuite.hash, session.sakeHmacKey,
+		identityString, session.sakeCounter)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Set the pre_shared_key extension. See RFC 8446, Section 4.2.11.1.
 	ticketAge := c.config.time().Sub(time.Unix(int64(session.createdAt), 0))
@@ -397,6 +404,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 		label:               cs.ticket,
 		obfuscatedTicketAge: uint32(ticketAge/time.Millisecond) + session.ageAdd,
 		sakeCounter:         session.sakeCounter,
+		sakeVerify:          sakeVerify,
 	}
 	hello.pskIdentities = []pskIdentity{identity}
 	hello.pskBinders = [][]byte{make([]byte, cipherSuite.hash.Size())}

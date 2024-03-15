@@ -344,10 +344,20 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
+		receivedVerify := hs.clientHello.pskIdentities[0].sakeVerify
+		if !sake.Verify(hs.suite.hash, sessionState.sakeHmacKey, []byte(c.RemoteAddr().String()),
+			hs.clientHello.pskIdentities[0].sakeCounter, receivedVerify) {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: SAKE HMAC doesn't match")
+		}
+
 		// Catch up with client KDK
 		sakeStepsBehind := hs.clientHello.pskIdentities[0].sakeCounter - sessionState.sakeCounter
+		if sakeStepsBehind < 0 {
+			c.sendAlert(alertInternalError)
+			return errors.New("tls: server SAKE counter ahead of client SAKE counter")
+		}
 		sake.Advance(&sessionState.secret, &sessionState.sakeCounter, pskSuite.extract, sakeStepsBehind)
-
 		hs.earlySecret = hs.suite.extract(sessionState.secret, nil)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)
 		// Clone the transcript in case a HelloRetryRequest was recorded.
