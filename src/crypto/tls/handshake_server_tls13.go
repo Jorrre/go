@@ -10,6 +10,7 @@ import (
 	"crypto"
 	"crypto/hmac"
 	"crypto/rsa"
+	"crypto/sake"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -342,6 +343,10 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			len(sessionState.verifiedChains) == 0 {
 			continue
 		}
+
+		// Catch up with client KDK
+		sakeStepsBehind := hs.clientHello.pskIdentities[0].sakeCounter - sessionState.sakeCounter
+		sake.Advance(&sessionState.secret, &sessionState.sakeCounter, pskSuite.extract, sakeStepsBehind)
 
 		hs.earlySecret = hs.suite.extract(sessionState.secret, nil)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)

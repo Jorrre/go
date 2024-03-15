@@ -160,6 +160,7 @@ const (
 type pskIdentity struct {
 	label               []byte
 	obfuscatedTicketAge uint32
+	sakeCounter         uint32
 }
 
 // TLS Elliptic Curve Point Formats

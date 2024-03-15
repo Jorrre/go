@@ -95,6 +95,7 @@ type clientHelloMsg struct {
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
 	quicTransportParameters          []byte
+	newSakeCounter                   uint32
 }
 
 func (m *clientHelloMsg) marshal() ([]byte, error) {
@@ -270,6 +271,7 @@ func (m *clientHelloMsg) marshal() ([]byte, error) {
 						exts.AddBytes(psk.label)
 					})
 					exts.AddUint32(psk.obfuscatedTicketAge)
+					exts.AddUint32(psk.sakeCounter)
 				}
 			})
 			exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
@@ -595,6 +597,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				var psk pskIdentity
 				if !readUint16LengthPrefixed(&identities, &psk.label) ||
 					!identities.ReadUint32(&psk.obfuscatedTicketAge) ||
+					!identities.ReadUint32(&psk.sakeCounter) ||
 					len(psk.label) == 0 {
 					return false
 				}
