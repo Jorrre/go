@@ -752,13 +752,17 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 
 	psk := cipherSuite.expandLabel(c.resumptionSecret, "resumption",
 		msg.nonce, cipherSuite.hash.Size())
-
+	sakeHmacKey := cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
+		msg.nonce, cipherSuite.hash.Size())
+	sakeCounter := uint32(0)
 	session, err := c.sessionState()
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
 	}
 	session.secret = psk
+	session.sakeHmacKey = sakeHmacKey
+	session.sakeCounter = sakeCounter
 	session.useBy = uint64(c.config.time().Add(lifetime).Unix())
 	session.ageAdd = msg.ageAdd
 	session.EarlyData = c.quic != nil && msg.maxEarlyData == 0xffffffff // RFC 9001, Section 4.6.1

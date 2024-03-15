@@ -85,6 +85,8 @@ type SessionState struct {
 	// which the ticket was received on the client.
 	createdAt         uint64 // seconds since UNIX epoch
 	secret            []byte // master secret for TLS 1.2, or the PSK for TLS 1.3
+	sakeHmacKey       []byte
+	sakeCounter       uint32
 	extMasterSecret   bool
 	peerCertificates  []*x509.Certificate
 	activeCertHandles []*activeCert
@@ -117,6 +119,10 @@ func (s *SessionState) Bytes() ([]byte, error) {
 	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddBytes(s.secret)
 	})
+	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(s.sakeHmacKey)
+	})
+	b.AddUint32(s.sakeCounter)
 	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
 		for _, extra := range s.Extra {
 			b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
@@ -190,6 +196,8 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 		!s.ReadUint16(&ss.cipherSuite) ||
 		!readUint64(&s, &ss.createdAt) ||
 		!readUint8LengthPrefixed(&s, &ss.secret) ||
+		!readUint8LengthPrefixed(&s, &ss.sakeHmacKey) ||
+		!s.ReadUint32(&ss.sakeCounter) ||
 		!s.ReadUint24LengthPrefixed(&extra) ||
 		!s.ReadUint8(&extMasterSecret) ||
 		!s.ReadUint8(&earlyData) ||

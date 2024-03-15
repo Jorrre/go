@@ -828,6 +828,9 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	psk := suite.expandLabel(c.resumptionSecret, "resumption",
 		nil, suite.hash.Size())
 
+	sakeHmacKey := suite.expandLabel(c.resumptionSecret, "sake hmac",
+		nil, suite.hash.Size())
+	sakeCounter := uint32(0)
 	m := new(newSessionTicketMsgTLS13)
 
 	state, err := c.sessionState()
@@ -835,6 +838,8 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 		return err
 	}
 	state.secret = psk
+	state.sakeHmacKey = sakeHmacKey
+	state.sakeCounter = sakeCounter
 	state.EarlyData = earlyData
 	if c.config.WrapSession != nil {
 		m.label, err = c.config.WrapSession(c.connectionStateLocked(), state)
