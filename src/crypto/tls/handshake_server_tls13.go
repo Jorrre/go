@@ -345,20 +345,21 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		}
 
 		receivedVerify := hs.clientHello.pskIdentities[0].sakeVerify
-		if !sake.Verify(hs.suite.hash, sessionState.sakeHmacKey, []byte(c.RemoteAddr().String()),
+		if !sake.Verify(hs.suite.hash, sessionState.sakeState.HmacKey, []byte(c.RemoteAddr().String()),
 			hs.clientHello.pskIdentities[0].sakeCounter, receivedVerify) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
 
 		// Catch up with client KDK
-		sakeStepsBehind := hs.clientHello.pskIdentities[0].sakeCounter - sessionState.sakeCounter
+		sakeStepsBehind := hs.clientHello.pskIdentities[0].sakeCounter - sessionState.sakeState.Counter
 		if sakeStepsBehind < 0 {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: server SAKE counter ahead of client SAKE counter")
 		}
-		sake.Advance(&sessionState.secret, &sessionState.sakeCounter, pskSuite.extract, sakeStepsBehind)
+		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, sakeStepsBehind)
 		hs.earlySecret = hs.suite.extract(sessionState.secret, nil)
+		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, 1)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)
 		// Clone the transcript in case a HelloRetryRequest was recorded.
 		transcript := cloneHash(hs.transcript, hs.suite.hash)
@@ -843,9 +844,13 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	psk := suite.expandLabel(c.resumptionSecret, "resumption",
 		nil, suite.hash.Size())
 
-	sakeHmacKey := suite.expandLabel(c.resumptionSecret, "sake hmac",
-		nil, suite.hash.Size())
-	sakeCounter := uint32(0)
+	if !c.sakeState.IsInitialized() {
+		c.sakeState = new(sake.SakeState)
+		c.sakeState.Mode = sake.LP2
+		c.sakeState.Kdk = psk
+		c.sakeState.HmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
+			nil, suite.hash.Size())
+	}
 	m := new(newSessionTicketMsgTLS13)
 
 	state, err := c.sessionState()
@@ -853,8 +858,7 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 		return err
 	}
 	state.secret = psk
-	state.sakeHmacKey = sakeHmacKey
-	state.sakeCounter = sakeCounter
+	state.sakeState = c.sakeState
 	state.EarlyData = earlyData
 	if c.config.WrapSession != nil {
 		m.label, err = c.config.WrapSession(c.connectionStateLocked(), state)

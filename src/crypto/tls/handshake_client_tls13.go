@@ -11,6 +11,7 @@ import (
 	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/rsa"
+	"crypto/sake"
 	"errors"
 	"hash"
 	"time"
@@ -752,17 +753,21 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 
 	psk := cipherSuite.expandLabel(c.resumptionSecret, "resumption",
 		msg.nonce, cipherSuite.hash.Size())
-	sakeHmacKey := cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
-		msg.nonce, cipherSuite.hash.Size())
-	sakeCounter := uint32(0)
+	if !c.sakeState.IsInitialized() {
+		c.sakeState = new(sake.SakeState)
+		c.sakeState.Mode = sake.LP2
+		c.sakeState.Kdk = psk
+		c.sakeState.HmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
+			msg.nonce, cipherSuite.hash.Size())
+	}
+
 	session, err := c.sessionState()
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
 	}
 	session.secret = psk
-	session.sakeHmacKey = sakeHmacKey
-	session.sakeCounter = sakeCounter
+	session.sakeState = c.sakeState
 	session.useBy = uint64(c.config.time().Add(lifetime).Unix())
 	session.ageAdd = msg.ageAdd
 	session.EarlyData = c.quic != nil && msg.maxEarlyData == 0xffffffff // RFC 9001, Section 4.6.1

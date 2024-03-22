@@ -389,11 +389,11 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 		}
 	}
 	// Advance KDK
-	sake.AdvanceNextOdd(&session.secret, &session.sakeCounter, cipherSuite.extract)
+	sake.AdvanceNextOdd(&session.sakeState.Kdk, &session.sakeState.Counter, cipherSuite.extract)
 	// Genereate SAKE challenge for auth purposes
 	identityString := []byte(c.LocalAddr().String())
-	sakeVerify, err := sake.CreateSakeVerify(cipherSuite.hash, session.sakeHmacKey,
-		identityString, session.sakeCounter)
+	sakeVerify, err := sake.CreateSakeVerify(cipherSuite.hash, session.sakeState.HmacKey,
+		identityString, session.sakeState.Counter)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -403,7 +403,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	identity := pskIdentity{
 		label:               cs.ticket,
 		obfuscatedTicketAge: uint32(ticketAge/time.Millisecond) + session.ageAdd,
-		sakeCounter:         session.sakeCounter,
+		sakeCounter:         session.sakeState.Counter,
 		sakeVerify:          sakeVerify,
 	}
 	hello.pskIdentities = []pskIdentity{identity}

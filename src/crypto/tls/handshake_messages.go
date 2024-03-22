@@ -95,7 +95,6 @@ type clientHelloMsg struct {
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
 	quicTransportParameters          []byte
-	newSakeCounter                   uint32
 }
 
 func (m *clientHelloMsg) marshal() ([]byte, error) {
