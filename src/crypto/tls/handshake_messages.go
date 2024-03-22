@@ -272,7 +272,7 @@ func (m *clientHelloMsg) marshal() ([]byte, error) {
 					exts.AddUint32(psk.obfuscatedTicketAge)
 					exts.AddUint32(psk.sakeCounter)
 					exts.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-						b.AddBytes(psk.sakeVerify)
+						b.AddBytes(psk.clientHmac)
 					})
 				}
 			})
@@ -600,7 +600,7 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 				if !readUint16LengthPrefixed(&identities, &psk.label) ||
 					!identities.ReadUint32(&psk.obfuscatedTicketAge) ||
 					!identities.ReadUint32(&psk.sakeCounter) ||
-					!readUint8LengthPrefixed(&identities, &psk.sakeVerify) ||
+					!readUint8LengthPrefixed(&identities, &psk.clientHmac) ||
 					len(psk.label) == 0 {
 					return false
 				}

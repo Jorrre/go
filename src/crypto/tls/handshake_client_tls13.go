@@ -360,6 +360,17 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server selected an invalid PSK and cipher suite pair")
 	}
 
+	serverIdentity := []byte(c.conn.RemoteAddr().String())
+	if !sake.VerifyHmac(pskSuite.hash, hs.session.sakeState.HmacKey, serverIdentity,
+		hs.session.sakeState.Counter, hs.serverHello.sakeHmac) {
+		c.sendAlert(alertInternalError)
+		return errors.New("tls: SAKE HMAC doesn't match")
+	}
+	if hs.serverHello.sakeCounter != hs.session.sakeState.Counter {
+		c.sendAlert(alertInternalError)
+		return errors.New("tls: SAKE counters out of sync")
+	}
+
 	hs.usingPSK = true
 	c.didResume = true
 	c.peerCertificates = hs.session.peerCertificates
@@ -387,6 +398,8 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	earlySecret := hs.earlySecret
 	if !hs.usingPSK {
 		earlySecret = hs.suite.extract(nil, nil)
+	} else {
+		sake.Advance(&hs.session.sakeState.Kdk, &hs.session.sakeState.Counter, hs.suite.extract, 1)
 	}
 
 	handshakeSecret := hs.suite.extract(sharedKey,

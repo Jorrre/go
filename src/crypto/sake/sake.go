@@ -54,7 +54,7 @@ func Advance(kdk *[]byte, counter *uint32, prf func([]byte, []byte) []byte, step
 	}
 }
 
-func CreateSakeVerify(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32) ([]byte, error) {
+func CreateHmac(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32) ([]byte, error) {
 	hs := hmac.New(h.New, hmacKey)
 	b := cryptobyte.Builder{}
 	b.AddBytes(identity)
@@ -66,8 +66,8 @@ func CreateSakeVerify(h crypto.Hash, hmacKey []byte, identity []byte, counter ui
 	return hs.Sum(verifyStringBytes), nil
 }
 
-func Verify(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32, receivedVerify []byte) bool {
-	localVerify, err := CreateSakeVerify(h, hmacKey, identity, counter)
+func VerifyHmac(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32, receivedVerify []byte) bool {
+	localVerify, err := CreateHmac(h, hmacKey, identity, counter)
 	if err != nil {
 		return false
 	}

@@ -344,9 +344,9 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
-		receivedVerify := hs.clientHello.pskIdentities[0].sakeVerify
-		if !sake.Verify(hs.suite.hash, sessionState.sakeState.HmacKey, []byte(c.RemoteAddr().String()),
-			hs.clientHello.pskIdentities[0].sakeCounter, receivedVerify) {
+		clientHmac := hs.clientHello.pskIdentities[0].clientHmac
+		if !sake.VerifyHmac(hs.suite.hash, sessionState.sakeState.HmacKey, []byte(c.RemoteAddr().String()),
+			hs.clientHello.pskIdentities[0].sakeCounter, clientHmac) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
@@ -361,7 +361,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 
 		// Genereate server HMAC
 		identityString := []byte(c.LocalAddr().String())
-		serverHmac, err := sake.CreateSakeVerify(pskSuite.hash, sessionState.sakeState.HmacKey, identityString, sessionState.sakeState.Counter)
+		serverHmac, err := sake.CreateHmac(pskSuite.hash, sessionState.sakeState.HmacKey, identityString, sessionState.sakeState.Counter)
 		if err != nil {
 			return err
 		}
