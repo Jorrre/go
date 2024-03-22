@@ -649,8 +649,10 @@ type serverHelloMsg struct {
 	serverShare                  keyShare
 	selectedIdentityPresent      bool
 	selectedIdentity             uint16
-	supportedPoints              []uint8
+	sakeHmac                     []byte
+	sakeCounter                  uint32
 
+	supportedPoints []uint8
 	// HelloRetryRequest extensions
 	cookie        []byte
 	selectedGroup CurveID
@@ -723,6 +725,11 @@ func (m *serverHelloMsg) marshal() ([]byte, error) {
 		exts.AddUint16(extensionPreSharedKey)
 		exts.AddUint16LengthPrefixed(func(exts *cryptobyte.Builder) {
 			exts.AddUint16(m.selectedIdentity)
+			exts.AddUint32(m.sakeCounter)
+			exts.AddUint8LengthPrefixed(func(exts *cryptobyte.Builder) {
+				exts.AddBytes(m.sakeHmac)
+			})
+
 		})
 	}
 
@@ -872,7 +879,9 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 			}
 		case extensionPreSharedKey:
 			m.selectedIdentityPresent = true
-			if !extData.ReadUint16(&m.selectedIdentity) {
+			if !extData.ReadUint16(&m.selectedIdentity) ||
+				!extData.ReadUint32(&m.sakeCounter) ||
+				!readUint8LengthPrefixed(&extData, &m.sakeHmac) {
 				return false
 			}
 		case extensionSupportedPoints:

@@ -358,6 +358,16 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			return errors.New("tls: server SAKE counter ahead of client SAKE counter")
 		}
 		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, sakeStepsBehind)
+
+		// Genereate server HMAC
+		identityString := []byte(c.LocalAddr().String())
+		serverHmac, err := sake.CreateSakeVerify(pskSuite.hash, sessionState.sakeState.HmacKey, identityString, sessionState.sakeState.Counter)
+		if err != nil {
+			return err
+		}
+		hs.hello.sakeHmac = serverHmac
+		hs.hello.sakeCounter = sessionState.sakeState.Counter
+
 		hs.earlySecret = hs.suite.extract(sessionState.secret, nil)
 		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, 1)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)
