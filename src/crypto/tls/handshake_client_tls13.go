@@ -360,8 +360,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server selected an invalid PSK and cipher suite pair")
 	}
 
-	serverIdentity := []byte(c.conn.RemoteAddr().String())
-	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, serverIdentity, hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
+	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, c.conn.RemoteAddr().String(), hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: SAKE HMAC doesn't match")
 	}
@@ -763,12 +762,11 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 		return c.sendAlert(alertInternalError)
 	}
 
-	psk := cipherSuite.expandLabel(c.resumptionSecret, "resumption",
-		msg.nonce, cipherSuite.hash.Size())
 	if !c.sakeState.IsInitialized() {
 		c.sakeState = new(sake.SakeState)
 		c.sakeState.Mode = sake.LP2
-		c.sakeState.Kdk = psk
+		c.sakeState.Kdk = cipherSuite.expandLabel(c.resumptionSecret, "resumption",
+			msg.nonce, cipherSuite.hash.Size())
 		c.sakeState.HmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
 			msg.nonce, cipherSuite.hash.Size())
 	}
@@ -778,7 +776,6 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 		c.sendAlert(alertInternalError)
 		return err
 	}
-	session.secret = psk
 	session.sakeState = c.sakeState
 	session.useBy = uint64(c.config.time().Add(lifetime).Unix())
 	session.ageAdd = msg.ageAdd

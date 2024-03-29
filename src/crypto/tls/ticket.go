@@ -208,7 +208,7 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 		!s.ReadUint24LengthPrefixed(&extra) ||
 		!s.ReadUint8(&extMasterSecret) ||
 		!s.ReadUint8(&earlyData) ||
-		len(ss.secret) == 0 ||
+		//len(ss.secret) == 0 ||
 		!unmarshalCertificate(&s, &cert) {
 		return nil, errors.New("tls: invalid session encoding")
 	}

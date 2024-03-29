@@ -344,7 +344,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
-		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, []byte(c.RemoteAddr().String()), identity.sakeCounter, identity.clientHmac) {
+		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, c.RemoteAddr().String(), identity.sakeCounter, identity.clientHmac) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
@@ -358,11 +358,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		sessionState.sakeState.Advance(pskSuite.extract, sakeStepsBehind)
 
 		// Genereate server HMAC
-		identityString := []byte(c.LocalAddr().String())
-		serverHmac, err := sessionState.sakeState.CreateHmac(pskSuite.hash, identityString)
-		if err != nil {
-			return err
-		}
+		serverHmac := sessionState.sakeState.CreateHmac(pskSuite.hash, c.LocalAddr().String())
 		hs.hello.serverHmac = serverHmac
 		hs.hello.sakeCounter = sessionState.sakeState.Counter
 
@@ -850,13 +846,11 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	}
 	// ticket_nonce, which must be unique per connection, is always left at
 	// zero because we only ever send one ticket per connection.
-	psk := suite.expandLabel(c.resumptionSecret, "resumption",
-		nil, suite.hash.Size())
-
 	if !c.sakeState.IsInitialized() {
 		c.sakeState = new(sake.SakeState)
 		c.sakeState.Mode = sake.LP2
-		c.sakeState.Kdk = psk
+		c.sakeState.Kdk = suite.expandLabel(c.resumptionSecret, "resumption",
+			nil, suite.hash.Size())
 		c.sakeState.HmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
 			nil, suite.hash.Size())
 	}
@@ -866,7 +860,6 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	if err != nil {
 		return err
 	}
-	state.secret = psk
 	state.sakeState = c.sakeState
 	state.EarlyData = earlyData
 	if c.config.WrapSession != nil {
