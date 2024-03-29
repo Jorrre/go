@@ -344,32 +344,30 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
-		clientHmac := hs.clientHello.pskIdentities[0].clientHmac
-		if !sake.VerifyHmac(hs.suite.hash, sessionState.sakeState.HmacKey, []byte(c.RemoteAddr().String()),
-			hs.clientHello.pskIdentities[0].sakeCounter, clientHmac) {
+		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, []byte(c.RemoteAddr().String()), identity.sakeCounter, identity.clientHmac) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
 
 		// Catch up with client KDK
-		sakeStepsBehind := hs.clientHello.pskIdentities[0].sakeCounter - sessionState.sakeState.Counter
+		sakeStepsBehind := identity.sakeCounter - sessionState.sakeState.Counter
 		if sakeStepsBehind < 0 {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: server SAKE counter ahead of client SAKE counter")
 		}
-		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, sakeStepsBehind)
+		sessionState.sakeState.Advance(pskSuite.extract, sakeStepsBehind)
 
 		// Genereate server HMAC
 		identityString := []byte(c.LocalAddr().String())
-		serverHmac, err := sake.CreateHmac(pskSuite.hash, sessionState.sakeState.HmacKey, identityString, sessionState.sakeState.Counter)
+		serverHmac, err := sessionState.sakeState.CreateHmac(pskSuite.hash, identityString)
 		if err != nil {
 			return err
 		}
-		hs.hello.sakeHmac = serverHmac
+		hs.hello.serverHmac = serverHmac
 		hs.hello.sakeCounter = sessionState.sakeState.Counter
 
-		hs.earlySecret = hs.suite.extract(sessionState.secret, nil)
-		sake.Advance(&sessionState.sakeState.Kdk, &sessionState.sakeState.Counter, pskSuite.extract, 1)
+		hs.earlySecret = hs.suite.extract(sessionState.sakeState.Kdk, nil)
+		sessionState.sakeState.Advance(pskSuite.extract, 1)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)
 		// Clone the transcript in case a HelloRetryRequest was recorded.
 		transcript := cloneHash(hs.transcript, hs.suite.hash)
@@ -403,6 +401,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		}
 
 		c.didResume = true
+		c.sakeState = sessionState.sakeState
 		c.peerCertificates = sessionState.peerCertificates
 		c.ocspResponse = sessionState.ocspResponse
 		c.scts = sessionState.scts

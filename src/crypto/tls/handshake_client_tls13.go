@@ -361,8 +361,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 	}
 
 	serverIdentity := []byte(c.conn.RemoteAddr().String())
-	if !sake.VerifyHmac(pskSuite.hash, hs.session.sakeState.HmacKey, serverIdentity,
-		hs.session.sakeState.Counter, hs.serverHello.sakeHmac) {
+	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, serverIdentity, hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: SAKE HMAC doesn't match")
 	}
@@ -399,7 +398,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	if !hs.usingPSK {
 		earlySecret = hs.suite.extract(nil, nil)
 	} else {
-		sake.Advance(&hs.session.sakeState.Kdk, &hs.session.sakeState.Counter, hs.suite.extract, 1)
+		hs.session.sakeState.Advance(hs.suite.extract, 1)
 	}
 
 	handshakeSecret := hs.suite.extract(sharedKey,

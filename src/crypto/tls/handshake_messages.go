@@ -649,7 +649,7 @@ type serverHelloMsg struct {
 	serverShare                  keyShare
 	selectedIdentityPresent      bool
 	selectedIdentity             uint16
-	sakeHmac                     []byte
+	serverHmac                   []byte
 	sakeCounter                  uint32
 
 	supportedPoints []uint8
@@ -727,7 +727,7 @@ func (m *serverHelloMsg) marshal() ([]byte, error) {
 			exts.AddUint16(m.selectedIdentity)
 			exts.AddUint32(m.sakeCounter)
 			exts.AddUint8LengthPrefixed(func(exts *cryptobyte.Builder) {
-				exts.AddBytes(m.sakeHmac)
+				exts.AddBytes(m.serverHmac)
 			})
 
 		})
@@ -881,7 +881,7 @@ func (m *serverHelloMsg) unmarshal(data []byte) bool {
 			m.selectedIdentityPresent = true
 			if !extData.ReadUint16(&m.selectedIdentity) ||
 				!extData.ReadUint32(&m.sakeCounter) ||
-				!readUint8LengthPrefixed(&extData, &m.sakeHmac) {
+				!readUint8LengthPrefixed(&extData, &m.serverHmac) {
 				return false
 			}
 		case extensionSupportedPoints:

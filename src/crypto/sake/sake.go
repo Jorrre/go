@@ -19,43 +19,37 @@ type SakeState struct {
 	HmacKey []byte
 }
 
-type sakeMode struct {
-	id            uint8
-	newRunAdvance func(kdk *[]byte, counter *uint32, prf func([]byte, []byte) []byte)
-}
-
-var sakeModes = []*sakeMode{
-	{LP2, AdvanceNextOdd},
-}
-
-func sakeModeById(id uint8) *sakeMode {
-	for _, sakeMode := range sakeModes {
-		if sakeMode.id == id {
-			return sakeMode
-		}
-	}
-	return nil
-}
-
 func (s *SakeState) IsInitialized() bool {
 	return s != nil && s.Kdk != nil && s.HmacKey != nil && s.Mode > 0
 }
 
-func AdvanceNextOdd(kdk *[]byte, counter *uint32, prf func([]byte, []byte) []byte) {
-	nextOdd := *counter + *counter%2 + 1
-	steps := nextOdd - *counter
-	Advance(kdk, counter, prf, steps)
+func (s *SakeState) AdvanceNextOdd(prf func([]byte, []byte) []byte) {
+	nextOdd := s.Counter + s.Counter%2 + 1
+	steps := nextOdd - s.Counter
+	s.Advance(prf, steps)
 }
 
-func Advance(kdk *[]byte, counter *uint32, prf func([]byte, []byte) []byte, steps uint32) {
+func (s *SakeState) Advance(prf func([]byte, []byte) []byte, steps uint32) {
 	for i := uint32(0); i < steps; i++ {
-		*kdk = prf([]byte("ad"), *kdk)
-		*counter += 1
+		s.Kdk = prf([]byte("ad"), s.Kdk)
+		s.Counter += 1
 	}
 }
 
-func CreateHmac(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32) ([]byte, error) {
-	hs := hmac.New(h.New, hmacKey)
+func (s *SakeState) CreateHmac(h crypto.Hash, identity []byte) ([]byte, error) {
+	return s.makeHmac(h, identity, s.Counter)
+}
+
+func (s *SakeState) VerifyHmac(h crypto.Hash, identity []byte, receivedCounter uint32, receivedHmac []byte) bool {
+	localHmac, err := s.makeHmac(h, identity, receivedCounter)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(localHmac, receivedHmac)
+}
+
+func (s *SakeState) makeHmac(h crypto.Hash, identity []byte, counter uint32) ([]byte, error) {
+	hs := hmac.New(h.New, s.HmacKey)
 	b := cryptobyte.Builder{}
 	b.AddBytes(identity)
 	b.AddUint32(counter)
@@ -64,12 +58,4 @@ func CreateHmac(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32) 
 		return nil, err
 	}
 	return hs.Sum(verifyStringBytes), nil
-}
-
-func VerifyHmac(h crypto.Hash, hmacKey []byte, identity []byte, counter uint32, receivedVerify []byte) bool {
-	localVerify, err := CreateHmac(h, hmacKey, identity, counter)
-	if err != nil {
-		return false
-	}
-	return hmac.Equal(localVerify, receivedVerify)
 }

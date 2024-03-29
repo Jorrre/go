@@ -12,7 +12,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
-	"crypto/sake"
 	"crypto/subtle"
 	"crypto/x509"
 	"errors"
@@ -204,6 +203,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 				}
 			}
 		}()
+		c.sakeState = session.sakeState
 	}
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
@@ -389,11 +389,10 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 		}
 	}
 	// Advance KDK
-	sake.AdvanceNextOdd(&session.sakeState.Kdk, &session.sakeState.Counter, cipherSuite.extract)
+	session.sakeState.AdvanceNextOdd(cipherSuite.extract)
 	// Genereate SAKE challenge for auth purposes
 	identityString := []byte(c.LocalAddr().String())
-	clientHmac, err := sake.CreateHmac(cipherSuite.hash, session.sakeState.HmacKey,
-		identityString, session.sakeState.Counter)
+	clientHmac, err := session.sakeState.CreateHmac(cipherSuite.hash, identityString)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -410,7 +409,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	hello.pskBinders = [][]byte{make([]byte, cipherSuite.hash.Size())}
 
 	// Compute the PSK binders. See RFC 8446, Section 4.2.11.2.
-	earlySecret = cipherSuite.extract(session.secret, nil)
+	earlySecret = cipherSuite.extract(session.sakeState.Kdk, nil)
 	binderKey = cipherSuite.deriveSecret(earlySecret, resumptionBinderLabel, nil)
 	transcript := cipherSuite.hash.New()
 	helloBytes, err := hello.marshalWithoutBinders()
