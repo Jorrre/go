@@ -360,7 +360,7 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server selected an invalid PSK and cipher suite pair")
 	}
 
-	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, c.conn.RemoteAddr().String(), hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
+	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, "server", hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: SAKE HMAC doesn't match")
 	}

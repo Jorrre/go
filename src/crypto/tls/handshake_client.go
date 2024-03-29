@@ -391,7 +391,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	// Advance KDK
 	session.sakeState.AdvanceNextOdd(cipherSuite.extract)
 	// Genereate SAKE challenge for auth purposes
-	clientHmac := session.sakeState.CreateHmac(cipherSuite.hash, c.LocalAddr().String())
+	clientHmac := session.sakeState.CreateHmac(cipherSuite.hash, "client")
 
 	// Set the pre_shared_key extension. See RFC 8446, Section 4.2.11.1.
 	ticketAge := c.config.time().Sub(time.Unix(int64(session.createdAt), 0))

@@ -344,7 +344,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
-		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, c.RemoteAddr().String(), identity.sakeCounter, identity.clientHmac) {
+		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, "client", identity.sakeCounter, identity.clientHmac) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
@@ -358,7 +358,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		sessionState.sakeState.Advance(pskSuite.extract, sakeStepsBehind)
 
 		// Genereate server HMAC
-		serverHmac := sessionState.sakeState.CreateHmac(pskSuite.hash, c.LocalAddr().String())
+		serverHmac := sessionState.sakeState.CreateHmac(pskSuite.hash, "server")
 		hs.hello.serverHmac = serverHmac
 		hs.hello.sakeCounter = sessionState.sakeState.Counter
 
