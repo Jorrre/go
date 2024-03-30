@@ -54,9 +54,9 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	if hs.ecdheKey == nil || len(hs.hello.keyShares) != 1 {
-		return c.sendAlert(alertInternalError)
-	}
+	//if hs.ecdheKey == nil || len(hs.hello.keyShares) != 1 {
+	//	return c.sendAlert(alertInternalError)
+	//}
 
 	if err := hs.checkServerHelloOrHRR(); err != nil {
 		return err
@@ -330,16 +330,15 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: malformed key_share extension")
 	}
 
-	if hs.serverHello.serverShare.group == 0 {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: server did not send a key share")
-	}
-	if sentID, _ := curveIDForCurve(hs.ecdheKey.Curve()); hs.serverHello.serverShare.group != sentID {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: server selected unsupported group")
-	}
-
 	if !hs.serverHello.selectedIdentityPresent {
+		if hs.serverHello.serverShare.group == 0 {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: server did not send a key share")
+		}
+		if sentID, _ := curveIDForCurve(hs.ecdheKey.Curve()); hs.serverHello.serverShare.group != sentID {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: server selected unsupported group")
+		}
 		return nil
 	}
 
@@ -382,19 +381,19 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 	c := hs.c
 
-	peerKey, err := hs.ecdheKey.Curve().NewPublicKey(hs.serverHello.serverShare.data)
-	if err != nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid server key share")
-	}
-	sharedKey, err := hs.ecdheKey.ECDH(peerKey)
-	if err != nil {
-		c.sendAlert(alertIllegalParameter)
-		return errors.New("tls: invalid server key share")
-	}
-
 	earlySecret := hs.earlySecret
+	var sharedKey []byte
 	if !hs.usingPSK {
+		peerKey, err := hs.ecdheKey.Curve().NewPublicKey(hs.serverHello.serverShare.data)
+		if err != nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid server key share")
+		}
+		sharedKey, err = hs.ecdheKey.ECDH(peerKey)
+		if err != nil {
+			c.sendAlert(alertIllegalParameter)
+			return errors.New("tls: invalid server key share")
+		}
 		earlySecret = hs.suite.extract(nil, nil)
 	} else {
 		hs.session.sakeState.Advance(hs.suite.extract, 1)
@@ -418,7 +417,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		c.quicSetReadSecret(QUICEncryptionLevelHandshake, hs.suite.id, serverSecret)
 	}
 
-	err = c.config.writeKeyLog(keyLogLabelClientHandshake, hs.hello.random, clientSecret)
+	err := c.config.writeKeyLog(keyLogLabelClientHandshake, hs.hello.random, clientSecret)
 	if err != nil {
 		c.sendAlert(alertInternalError)
 		return err
