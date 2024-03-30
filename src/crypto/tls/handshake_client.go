@@ -133,7 +133,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		hello.supportedSignatureAlgorithms = testingOnlyForceClientHelloSignatureAlgorithms
 	}
 
-	var key *ecdh.PrivateKey
 	if hello.supportedVersions[0] == VersionTLS13 {
 		// Reset the list of ciphers when the client only supports TLS 1.3.
 		if len(hello.supportedVersions) == 1 {
@@ -144,16 +143,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		} else {
 			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13NoAES...)
 		}
-
-		curveID := config.curvePreferences()[0]
-		if _, ok := curveForCurveID(curveID); !ok {
-			return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
-		}
-		key, err = generateECDHEKey(config.rand(), curveID)
-		if err != nil {
-			return nil, nil, err
-		}
-		hello.keyShares = []keyShare{{group: curveID, data: key.PublicKey().Bytes()}}
 	}
 
 	if c.quic != nil {
@@ -167,7 +156,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		hello.quicTransportParameters = p
 	}
 
-	return hello, key, nil
+	return hello, nil, nil
 }
 
 func (c *Conn) clientHandshake(ctx context.Context) (err error) {
@@ -179,7 +168,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	// need to be reset.
 	c.didResume = false
 
-	hello, ecdheKey, err := c.makeClientHello()
+	hello, _, err := c.makeClientHello()
 	if err != nil {
 		return err
 	}
@@ -189,6 +178,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	var ecdheKey *ecdh.PrivateKey
 	if session != nil {
 		defer func() {
 			// If we got a handshake failure when resuming a session, throw away
@@ -204,6 +194,17 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 			}
 		}()
 		c.sakeState = session.sakeState
+	} else {
+		config := c.config
+		curveID := config.curvePreferences()[0]
+		if _, ok := curveForCurveID(curveID); !ok {
+			return errors.New("tls: CurvePreferences includes unsupported curve")
+		}
+		ecdheKey, err = generateECDHEKey(config.rand(), curveID)
+		if err != nil {
+			return err
+		}
+		hello.keyShares = []keyShare{{group: curveID, data: ecdheKey.PublicKey().Bytes()}}
 	}
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
