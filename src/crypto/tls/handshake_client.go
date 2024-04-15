@@ -289,9 +289,9 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	hello.ticketSupported = true
 
 	if hello.supportedVersions[0] == VersionTLS13 {
-		// Require DHE on resumption as it guarantees forward secrecy against
+		// Require DHE or SAKE on resumption as it guarantees forward secrecy against
 		// compromise of the session ticket key. See RFC 8446, Section 4.2.9.
-		hello.pskModes = []uint8{pskModeDHE}
+		hello.pskModes = []uint8{pskModeDHE, pskModeSAKE}
 	}
 
 	// Session resumption is not allowed if renegotiating because

@@ -153,6 +153,7 @@ type keyShare struct {
 const (
 	pskModePlain uint8 = 0
 	pskModeDHE   uint8 = 1
+	pskModeSAKE  uint8 = 2
 )
 
 // TLS 1.3 PSK Identity. Can be a Session Ticket, or a reference to a saved

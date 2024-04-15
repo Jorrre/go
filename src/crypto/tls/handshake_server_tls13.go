@@ -57,6 +57,11 @@ func (hs *serverHandshakeStateTLS13) handshake() error {
 	if err := hs.checkForResumption(); err != nil {
 		return err
 	}
+	if !hs.usingPSK {
+		if err := hs.generateSharedKey(); err != nil {
+			return err
+		}
+	}
 	if err := hs.pickCertificate(); err != nil {
 		return err
 	}
@@ -212,7 +217,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 
 	modeOK := false
 	for _, mode := range hs.clientHello.pskModes {
-		if mode == pskModeDHE {
+		if mode == pskModeSAKE {
 			modeOK = true
 			break
 		}
@@ -221,66 +226,12 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		return nil
 	}
 
+	if len(hs.clientHello.pskIdentities) == 0 {
+		return nil
+	}
 	if len(hs.clientHello.pskIdentities) != len(hs.clientHello.pskBinders) {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid or missing PSK binders")
-	}
-	if len(hs.clientHello.pskIdentities) == 0 {
-
-		// Pick the ECDHE group in server preference order, but give priority to
-		// groups with a key share, to avoid a HelloRetryRequest round-trip.
-		var selectedGroup CurveID
-		var clientKeyShare *keyShare
-	GroupSelection:
-		for _, preferredGroup := range c.config.curvePreferences() {
-			for _, ks := range hs.clientHello.keyShares {
-				if ks.group == preferredGroup {
-					selectedGroup = ks.group
-					clientKeyShare = &ks
-					break GroupSelection
-				}
-			}
-			if selectedGroup != 0 {
-				continue
-			}
-			for _, group := range hs.clientHello.supportedCurves {
-				if group == preferredGroup {
-					selectedGroup = group
-					break
-				}
-			}
-		}
-		if selectedGroup == 0 {
-			c.sendAlert(alertHandshakeFailure)
-			return errors.New("tls: no ECDHE curve supported by both client and server")
-		}
-		if clientKeyShare == nil {
-			if err := hs.doHelloRetryRequest(selectedGroup); err != nil {
-				return err
-			}
-			clientKeyShare = &hs.clientHello.keyShares[0]
-		}
-
-		if _, ok := curveForCurveID(selectedGroup); !ok {
-			c.sendAlert(alertInternalError)
-			return errors.New("tls: CurvePreferences includes unsupported curve")
-		}
-		key, err := generateECDHEKey(c.config.rand(), selectedGroup)
-		if err != nil {
-			c.sendAlert(alertInternalError)
-			return err
-		}
-		hs.hello.serverShare = keyShare{group: selectedGroup, data: key.PublicKey().Bytes()}
-		peerKey, err := key.Curve().NewPublicKey(clientKeyShare.data)
-		if err != nil {
-			c.sendAlert(alertIllegalParameter)
-			return errors.New("tls: invalid client key share")
-		}
-		hs.sharedKey, err = key.ECDH(peerKey)
-		if err != nil {
-			c.sendAlert(alertIllegalParameter)
-			return errors.New("tls: invalid client key share")
-		}
 	}
 
 	for i, identity := range hs.clientHello.pskIdentities {
@@ -406,6 +357,66 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		hs.hello.selectedIdentity = uint16(i)
 		hs.usingPSK = true
 		return nil
+	}
+
+	return nil
+}
+
+func (hs *serverHandshakeStateTLS13) generateSharedKey() error {
+	c := hs.c
+	// Pick the ECDHE group in server preference order, but give priority to
+	// groups with a key share, to avoid a HelloRetryRequest round-trip.
+	var selectedGroup CurveID
+	var clientKeyShare *keyShare
+GroupSelection:
+	for _, preferredGroup := range c.config.curvePreferences() {
+		for _, ks := range hs.clientHello.keyShares {
+			if ks.group == preferredGroup {
+				selectedGroup = ks.group
+				clientKeyShare = &ks
+				break GroupSelection
+			}
+		}
+		if selectedGroup != 0 {
+			continue
+		}
+		for _, group := range hs.clientHello.supportedCurves {
+			if group == preferredGroup {
+				selectedGroup = group
+				break
+			}
+		}
+	}
+	if selectedGroup == 0 {
+		c.sendAlert(alertHandshakeFailure)
+		return errors.New("tls: no ECDHE curve supported by both client and server")
+	}
+	if clientKeyShare == nil {
+		if err := hs.doHelloRetryRequest(selectedGroup); err != nil {
+			return err
+		}
+		clientKeyShare = &hs.clientHello.keyShares[0]
+	}
+
+	if _, ok := curveForCurveID(selectedGroup); !ok {
+		c.sendAlert(alertInternalError)
+		return errors.New("tls: CurvePreferences includes unsupported curve")
+	}
+	key, err := generateECDHEKey(c.config.rand(), selectedGroup)
+	if err != nil {
+		c.sendAlert(alertInternalError)
+		return err
+	}
+	hs.hello.serverShare = keyShare{group: selectedGroup, data: key.PublicKey().Bytes()}
+	peerKey, err := key.Curve().NewPublicKey(clientKeyShare.data)
+	if err != nil {
+		c.sendAlert(alertIllegalParameter)
+		return errors.New("tls: invalid client key share")
+	}
+	hs.sharedKey, err = key.ECDH(peerKey)
+	if err != nil {
+		c.sendAlert(alertIllegalParameter)
+		return errors.New("tls: invalid client key share")
 	}
 
 	return nil
@@ -811,7 +822,7 @@ func (hs *serverHandshakeStateTLS13) shouldSendSessionTickets() bool {
 
 	// Don't send tickets the client wouldn't use. See RFC 8446, Section 4.2.9.
 	for _, pskMode := range hs.clientHello.pskModes {
-		if pskMode == pskModeDHE {
+		if pskMode == pskModeSAKE {
 			return true
 		}
 	}
