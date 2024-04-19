@@ -17,10 +17,6 @@ type SakeState struct {
 	HmacKey []byte
 }
 
-func (s *SakeState) IsInitialized() bool {
-	return s != nil && s.Kdk != nil && s.HmacKey != nil && s.Mode > 0
-}
-
 func (s *SakeState) AdvanceNextOdd(prf func([]byte, []byte) []byte) {
 	nextOdd := s.Counter + s.Counter%2 + 1
 	steps := nextOdd - s.Counter

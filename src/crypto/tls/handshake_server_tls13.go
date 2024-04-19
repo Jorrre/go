@@ -856,13 +856,15 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	}
 	// ticket_nonce, which must be unique per connection, is always left at
 	// zero because we only ever send one ticket per connection.
-	if !c.sakeState.IsInitialized() {
-		c.sakeState = new(sake.SakeState)
-		c.sakeState.Mode = sake.LP2
-		c.sakeState.Kdk = suite.expandLabel(c.resumptionSecret, "resumption",
+	if c.sakeState == nil {
+		initialSakeState := new(sake.SakeState)
+		initialSakeState = new(sake.SakeState)
+		initialSakeState.Mode = sake.LP2
+		initialSakeState.Kdk = suite.expandLabel(c.resumptionSecret, "resumption",
 			nil, suite.hash.Size())
-		c.sakeState.HmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
+		initialSakeState.HmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
 			nil, suite.hash.Size())
+		c.sakeState = initialSakeState
 	}
 	m := new(newSessionTicketMsgTLS13)
 

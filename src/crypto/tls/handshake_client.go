@@ -194,7 +194,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 			}
 		}()
 		c.sakeState = session.sakeState
-	} else {
+	} else if hello.supportedVersions[0] == VersionTLS13 {
 		config := c.config
 		curveID := config.curvePreferences()[0]
 		if _, ok := curveForCurveID(curveID); !ok {

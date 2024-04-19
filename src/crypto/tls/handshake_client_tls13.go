@@ -54,9 +54,9 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	//if hs.ecdheKey == nil || len(hs.hello.keyShares) != 1 {
-	//	return c.sendAlert(alertInternalError)
-	//}
+	if hs.session == nil && (hs.ecdheKey == nil || len(hs.hello.keyShares) != 1) {
+		return c.sendAlert(alertInternalError)
+	}
 
 	if err := hs.checkServerHelloOrHRR(); err != nil {
 		return err
@@ -761,13 +761,14 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 		return c.sendAlert(alertInternalError)
 	}
 
-	if !c.sakeState.IsInitialized() {
-		c.sakeState = new(sake.SakeState)
-		c.sakeState.Mode = sake.LP2
-		c.sakeState.Kdk = cipherSuite.expandLabel(c.resumptionSecret, "resumption",
+	if c.sakeState == nil {
+		initialSakeState := new(sake.SakeState)
+		initialSakeState.Mode = sake.LP2
+		initialSakeState.Kdk = cipherSuite.expandLabel(c.resumptionSecret, "resumption",
 			msg.nonce, cipherSuite.hash.Size())
-		c.sakeState.HmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
+		initialSakeState.HmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
 			msg.nonce, cipherSuite.hash.Size())
+		c.sakeState = initialSakeState
 	}
 
 	session, err := c.sessionState()
