@@ -212,17 +212,6 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		return nil
 	}
 
-	modeOK := false
-	for _, mode := range hs.clientHello.pskModes {
-		if mode == pskModeDHE {
-			modeOK = true
-			break
-		}
-	}
-	if !modeOK {
-		return nil
-	}
-
 	if len(hs.clientHello.pskIdentities) != len(hs.clientHello.pskBinders) {
 		c.sendAlert(alertIllegalParameter)
 		return errors.New("tls: invalid or missing PSK binders")
@@ -799,13 +788,7 @@ func (hs *serverHandshakeStateTLS13) shouldSendSessionTickets() bool {
 		return false
 	}
 
-	// Don't send tickets the client wouldn't use. See RFC 8446, Section 4.2.9.
-	for _, pskMode := range hs.clientHello.pskModes {
-		if pskMode == pskModeDHE {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func (hs *serverHandshakeStateTLS13) sendSessionTickets() error {

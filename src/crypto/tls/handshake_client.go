@@ -39,27 +39,27 @@ type clientHandshakeState struct {
 
 var testingOnlyForceClientHelloSignatureAlgorithms []SignatureScheme
 
-func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
+func (c *Conn) makeClientHello() (*clientHelloMsg, error) {
 	config := c.config
 	if len(config.ServerName) == 0 && !config.InsecureSkipVerify {
-		return nil, nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
+		return nil, errors.New("tls: either ServerName or InsecureSkipVerify must be specified in the tls.Config")
 	}
 
 	nextProtosLength := 0
 	for _, proto := range config.NextProtos {
 		if l := len(proto); l == 0 || l > 255 {
-			return nil, nil, errors.New("tls: invalid NextProtos value")
+			return nil, errors.New("tls: invalid NextProtos value")
 		} else {
 			nextProtosLength += 1 + l
 		}
 	}
 	if nextProtosLength > 0xffff {
-		return nil, nil, errors.New("tls: NextProtos values too large")
+		return nil, errors.New("tls: NextProtos values too large")
 	}
 
 	supportedVersions := config.supportedVersions(roleClient)
 	if len(supportedVersions) == 0 {
-		return nil, nil, errors.New("tls: no supported versions satisfy MinVersion and MaxVersion")
+		return nil, errors.New("tls: no supported versions satisfy MinVersion and MaxVersion")
 	}
 
 	clientHelloVersion := config.maxSupportedVersion(roleClient)
@@ -111,7 +111,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 
 	_, err := io.ReadFull(config.rand(), hello.random)
 	if err != nil {
-		return nil, nil, errors.New("tls: short read from Rand: " + err.Error())
+		return nil, errors.New("tls: short read from Rand: " + err.Error())
 	}
 
 	// A random session ID is used to detect when the server accepted a ticket
@@ -122,7 +122,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 	if c.quic == nil {
 		hello.sessionId = make([]byte, 32)
 		if _, err := io.ReadFull(config.rand(), hello.sessionId); err != nil {
-			return nil, nil, errors.New("tls: short read from Rand: " + err.Error())
+			return nil, errors.New("tls: short read from Rand: " + err.Error())
 		}
 	}
 
@@ -133,7 +133,6 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		hello.supportedSignatureAlgorithms = testingOnlyForceClientHelloSignatureAlgorithms
 	}
 
-	var key *ecdh.PrivateKey
 	if hello.supportedVersions[0] == VersionTLS13 {
 		// Reset the list of ciphers when the client only supports TLS 1.3.
 		if len(hello.supportedVersions) == 1 {
@@ -144,22 +143,12 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		} else {
 			hello.cipherSuites = append(hello.cipherSuites, defaultCipherSuitesTLS13NoAES...)
 		}
-
-		curveID := config.curvePreferences()[0]
-		if _, ok := curveForCurveID(curveID); !ok {
-			return nil, nil, errors.New("tls: CurvePreferences includes unsupported curve")
-		}
-		key, err = generateECDHEKey(config.rand(), curveID)
-		if err != nil {
-			return nil, nil, err
-		}
-		hello.keyShares = []keyShare{{group: curveID, data: key.PublicKey().Bytes()}}
 	}
 
 	if c.quic != nil {
 		p, err := c.quicGetTransportParameters()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if p == nil {
 			p = []byte{}
@@ -167,7 +156,7 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *ecdh.PrivateKey, error) {
 		hello.quicTransportParameters = p
 	}
 
-	return hello, key, nil
+	return hello, nil
 }
 
 func (c *Conn) clientHandshake(ctx context.Context) (err error) {
@@ -179,7 +168,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	// need to be reset.
 	c.didResume = false
 
-	hello, ecdheKey, err := c.makeClientHello()
+	hello, err := c.makeClientHello()
 	if err != nil {
 		return err
 	}
@@ -189,6 +178,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	var ecdheKey *ecdh.PrivateKey
 	if session != nil {
 		defer func() {
 			// If we got a handshake failure when resuming a session, throw away
@@ -203,6 +193,16 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 				}
 			}
 		}()
+	} else {
+		curveID := c.config.curvePreferences()[0]
+		if _, ok := curveForCurveID(curveID); !ok {
+			return errors.New("tls: CurvePreferences includes unsupported curve")
+		}
+		ecdheKey, err = generateECDHEKey(c.config.rand(), curveID)
+		if err != nil {
+			return err
+		}
+		hello.keyShares = []keyShare{{group: curveID, data: ecdheKey.PublicKey().Bytes()}}
 	}
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
@@ -289,7 +289,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	if hello.supportedVersions[0] == VersionTLS13 {
 		// Require DHE on resumption as it guarantees forward secrecy against
 		// compromise of the session ticket key. See RFC 8446, Section 4.2.9.
-		hello.pskModes = []uint8{pskModeDHE}
+		hello.pskModes = []uint8{pskModePlain}
 	}
 
 	// Session resumption is not allowed if renegotiating because
