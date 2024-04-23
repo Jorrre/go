@@ -193,7 +193,7 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 				}
 			}
 		}()
-		c.sakeState = session.sakeState
+		c.lpState = session.lpState
 	} else if hello.supportedVersions[0] == VersionTLS13 {
 		config := c.config
 		curveID := config.curvePreferences()[0]
@@ -390,23 +390,23 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 		}
 	}
 	// Advance KDK
-	session.sakeState.AdvanceNextOdd(cipherSuite.extract)
+	session.lpState.advanceNextOdd(cipherSuite.extract)
 	// Genereate SAKE challenge for auth purposes
-	clientHmac := session.sakeState.CreateHmac(cipherSuite.hash, "client")
+	clientHmac := session.lpState.createHmac(cipherSuite.hash, "client")
 
 	// Set the pre_shared_key extension. See RFC 8446, Section 4.2.11.1.
 	ticketAge := c.config.time().Sub(time.Unix(int64(session.createdAt), 0))
 	identity := pskIdentity{
 		label:               cs.ticket,
 		obfuscatedTicketAge: uint32(ticketAge/time.Millisecond) + session.ageAdd,
-		sakeCounter:         session.sakeState.Counter,
+		sakeCounter:         session.lpState.counter,
 		clientHmac:          clientHmac,
 	}
 	hello.pskIdentities = []pskIdentity{identity}
 	hello.pskBinders = [][]byte{make([]byte, cipherSuite.hash.Size())}
 
 	// Compute the PSK binders. See RFC 8446, Section 4.2.11.2.
-	earlySecret = cipherSuite.extract(session.sakeState.Kdk, nil)
+	earlySecret = cipherSuite.extract(session.lpState.kdk, nil)
 	binderKey = cipherSuite.deriveSecret(earlySecret, resumptionBinderLabel, nil)
 	transcript := cipherSuite.hash.New()
 	helloBytes, err := hello.marshalWithoutBinders()

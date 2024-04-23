@@ -10,7 +10,6 @@ import (
 	"crypto"
 	"crypto/hmac"
 	"crypto/rsa"
-	"crypto/sake"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -294,26 +293,26 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			continue
 		}
 
-		if !sessionState.sakeState.VerifyHmac(hs.suite.hash, "client", identity.sakeCounter, identity.clientHmac) {
+		if !sessionState.lpState.verifyHmac(hs.suite.hash, "client", identity.sakeCounter, identity.clientHmac) {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: SAKE HMAC doesn't match")
 		}
 
 		// Catch up with client KDK
-		sakeStepsBehind := identity.sakeCounter - sessionState.sakeState.Counter
+		sakeStepsBehind := identity.sakeCounter - sessionState.lpState.counter
 		if sakeStepsBehind < 0 {
 			c.sendAlert(alertInternalError)
 			return errors.New("tls: server SAKE counter ahead of client SAKE counter")
 		}
-		sessionState.sakeState.Advance(pskSuite.extract, sakeStepsBehind)
+		sessionState.lpState.advance(pskSuite.extract, sakeStepsBehind)
 
 		// Genereate server HMAC
-		serverHmac := sessionState.sakeState.CreateHmac(pskSuite.hash, "server")
+		serverHmac := sessionState.lpState.createHmac(pskSuite.hash, "server")
 		hs.hello.serverHmac = serverHmac
-		hs.hello.sakeCounter = sessionState.sakeState.Counter
+		hs.hello.sakeCounter = sessionState.lpState.counter
 
-		hs.earlySecret = hs.suite.extract(sessionState.sakeState.Kdk, nil)
-		sessionState.sakeState.Advance(pskSuite.extract, 1)
+		hs.earlySecret = hs.suite.extract(sessionState.lpState.kdk, nil)
+		sessionState.lpState.advance(pskSuite.extract, 1)
 		binderKey := hs.suite.deriveSecret(hs.earlySecret, resumptionBinderLabel, nil)
 		// Clone the transcript in case a HelloRetryRequest was recorded.
 		transcript := cloneHash(hs.transcript, hs.suite.hash)
@@ -347,7 +346,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 		}
 
 		c.didResume = true
-		c.sakeState = sessionState.sakeState
+		c.lpState = sessionState.lpState
 		c.peerCertificates = sessionState.peerCertificates
 		c.ocspResponse = sessionState.ocspResponse
 		c.scts = sessionState.scts
@@ -856,15 +855,15 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	}
 	// ticket_nonce, which must be unique per connection, is always left at
 	// zero because we only ever send one ticket per connection.
-	if c.sakeState == nil {
-		initialSakeState := new(sake.SakeState)
-		initialSakeState = new(sake.SakeState)
-		initialSakeState.Mode = sake.LP2
-		initialSakeState.Kdk = suite.expandLabel(c.resumptionSecret, "resumption",
+	if c.lpState == nil {
+		initialSakeState := new(lpState)
+		initialSakeState = new(lpState)
+		initialSakeState.mode = lp2
+		initialSakeState.kdk = suite.expandLabel(c.resumptionSecret, "resumption",
 			nil, suite.hash.Size())
-		initialSakeState.HmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
+		initialSakeState.hmacKey = suite.expandLabel(c.resumptionSecret, "sake hmac",
 			nil, suite.hash.Size())
-		c.sakeState = initialSakeState
+		c.lpState = initialSakeState
 	}
 	m := new(newSessionTicketMsgTLS13)
 
@@ -872,7 +871,7 @@ func (c *Conn) sendSessionTicket(earlyData bool) error {
 	if err != nil {
 		return err
 	}
-	state.sakeState = c.sakeState
+	state.lpState = c.lpState
 	state.EarlyData = earlyData
 	if c.config.WrapSession != nil {
 		m.label, err = c.config.WrapSession(c.connectionStateLocked(), state)

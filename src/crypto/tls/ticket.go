@@ -8,7 +8,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
-	"crypto/sake"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -86,7 +85,7 @@ type SessionState struct {
 	// which the ticket was received on the client.
 	createdAt         uint64 // seconds since UNIX epoch
 	secret            []byte // master secret for TLS 1.2, or the PSK for TLS 1.3
-	sakeState         *sake.SakeState
+	lpState           *lpState
 	extMasterSecret   bool
 	peerCertificates  []*x509.Certificate
 	activeCertHandles []*activeCert
@@ -119,13 +118,13 @@ func (s *SessionState) Bytes() ([]byte, error) {
 	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddBytes(s.secret)
 	})
-	b.AddUint8(s.sakeState.Mode)
+	b.AddUint8(s.lpState.mode)
 	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(s.sakeState.Kdk)
+		b.AddBytes(s.lpState.kdk)
 	})
-	b.AddUint32(s.sakeState.Counter)
+	b.AddUint32(s.lpState.counter)
 	b.AddUint8LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes(s.sakeState.HmacKey)
+		b.AddBytes(s.lpState.hmacKey)
 	})
 	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
 		for _, extra := range s.Extra {
@@ -192,7 +191,7 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 	ss := &SessionState{}
 	s := cryptobyte.String(data)
 	var typ, extMasterSecret, earlyData uint8
-	var sakeState sake.SakeState
+	var lpState lpState
 	var cert Certificate
 	var extra cryptobyte.String
 	if !s.ReadUint16(&ss.version) ||
@@ -201,10 +200,10 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 		!s.ReadUint16(&ss.cipherSuite) ||
 		!readUint64(&s, &ss.createdAt) ||
 		!readUint8LengthPrefixed(&s, &ss.secret) ||
-		!s.ReadUint8(&sakeState.Mode) ||
-		!readUint8LengthPrefixed(&s, &sakeState.Kdk) ||
-		!s.ReadUint32(&sakeState.Counter) ||
-		!readUint8LengthPrefixed(&s, &sakeState.HmacKey) ||
+		!s.ReadUint8(&lpState.mode) ||
+		!readUint8LengthPrefixed(&s, &lpState.kdk) ||
+		!s.ReadUint32(&lpState.counter) ||
+		!readUint8LengthPrefixed(&s, &lpState.hmacKey) ||
 		!s.ReadUint24LengthPrefixed(&extra) ||
 		!s.ReadUint8(&extMasterSecret) ||
 		!s.ReadUint8(&earlyData) ||
@@ -212,7 +211,7 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 		!unmarshalCertificate(&s, &cert) {
 		return nil, errors.New("tls: invalid session encoding")
 	}
-	ss.sakeState = &sakeState
+	ss.lpState = &lpState
 	for !extra.Empty() {
 		var e []byte
 		if !readUint24LengthPrefixed(&extra, &e) {

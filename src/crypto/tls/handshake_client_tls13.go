@@ -11,7 +11,6 @@ import (
 	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/rsa"
-	"crypto/sake"
 	"errors"
 	"hash"
 	"time"
@@ -359,11 +358,11 @@ func (hs *clientHandshakeStateTLS13) processServerHello() error {
 		return errors.New("tls: server selected an invalid PSK and cipher suite pair")
 	}
 
-	if !hs.session.sakeState.VerifyHmac(pskSuite.hash, "server", hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
+	if !hs.session.lpState.verifyHmac(pskSuite.hash, "server", hs.serverHello.sakeCounter, hs.serverHello.serverHmac) {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: SAKE HMAC doesn't match")
 	}
-	if hs.serverHello.sakeCounter != hs.session.sakeState.Counter {
+	if hs.serverHello.sakeCounter != hs.session.lpState.counter {
 		c.sendAlert(alertInternalError)
 		return errors.New("tls: SAKE counters out of sync")
 	}
@@ -396,7 +395,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		}
 		earlySecret = hs.suite.extract(nil, nil)
 	} else {
-		hs.session.sakeState.Advance(hs.suite.extract, 1)
+		hs.session.lpState.advance(hs.suite.extract, 1)
 	}
 
 	handshakeSecret := hs.suite.extract(sharedKey,
@@ -761,14 +760,14 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 		return c.sendAlert(alertInternalError)
 	}
 
-	if c.sakeState == nil {
-		initialSakeState := new(sake.SakeState)
-		initialSakeState.Mode = sake.LP2
-		initialSakeState.Kdk = cipherSuite.expandLabel(c.resumptionSecret, "resumption",
+	if c.lpState == nil {
+		initialSakeState := new(lpState)
+		initialSakeState.mode = lp2
+		initialSakeState.kdk = cipherSuite.expandLabel(c.resumptionSecret, "resumption",
 			msg.nonce, cipherSuite.hash.Size())
-		initialSakeState.HmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
+		initialSakeState.hmacKey = cipherSuite.expandLabel(c.resumptionSecret, "sake hmac",
 			msg.nonce, cipherSuite.hash.Size())
-		c.sakeState = initialSakeState
+		c.lpState = initialSakeState
 	}
 
 	session, err := c.sessionState()
@@ -776,7 +775,7 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 		c.sendAlert(alertInternalError)
 		return err
 	}
-	session.sakeState = c.sakeState
+	session.lpState = c.lpState
 	session.useBy = uint64(c.config.time().Add(lifetime).Unix())
 	session.ageAdd = msg.ageAdd
 	session.EarlyData = c.quic != nil && msg.maxEarlyData == 0xffffffff // RFC 9001, Section 4.6.1
